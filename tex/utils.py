@@ -15,7 +15,7 @@ def remove_oldfiles_samepaper(paper_id):
 
 def download_paper(paper_id):
     file = wget.download(f"https://arxiv.org/e-print/{paper_id}")
-    files_dir = f'{file}_files'
+    files_dir = f'{paper_id}_files'
     os.makedirs(files_dir, exist_ok=True)
 
     with tarfile.open(file) as tar:
