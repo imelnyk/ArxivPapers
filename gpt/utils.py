@@ -200,11 +200,20 @@ def gpt_textvideo_verbalizer(text, llm_api, llm_strong, llm_base, manual, includ
 
     for i_s, sec in enumerate(sections):
 
-        page_inds += pagemap_sections[i_s]
+        # if there is a mismatch, make them of equal length
+        if len(sent_tokenize(sec)) != len(pagemap_sections[i_s]):
+            minN = min(len(sent_tokenize(sec)), len(pagemap_sections[i_s]))
+            cleaned_sent_tok = sent_tokenize(sec)[:minN]
+            cleaned_pmap_sec = pagemap_sections[i_s][:minN]
+        else:
+            cleaned_sent_tok = sent_tokenize(sec)
+            cleaned_pmap_sec = pagemap_sections[i_s]
+
+        page_inds += cleaned_pmap_sec
 
         curr += sec
 
-        for c in sent_tokenize(sec):
+        for c in cleaned_sent_tok:
             curr_upd.append(c.replace("###.", ' ').replace("###", ''))
 
         if i_s < len(sections) - 1 and len(encoding.encode(curr)) < 1000:
@@ -240,9 +249,9 @@ def gpt_textvideo_verbalizer(text, llm_api, llm_strong, llm_base, manual, includ
 
         human_message = 'The text must be written in the first person plural point of view. Do not use long latex ' \
                         'expressions, paraphrase them or summarize in words. Be as faithful to the given text as ' \
-                        'possible.' \
-                        'Below is the section of the paper, requiring paraphrasing and simplification and it is ' \
-                        f'indicated by double angle brackets <<{curr_upto_upto4k}>>.'
+                        'possible. Below is the section of the paper, requiring paraphrasing and simplification ' \
+                        f' and it is indicated by double angle brackets <<{curr_upto_upto4k}>>. Start with "In this ' \
+                        'section, we" and continue in first person plural point of view.'
 
         messages = [
             {'role': 'system', 'content': sys_message_func},
@@ -288,12 +297,11 @@ def gpt_textvideo_verbalizer(text, llm_api, llm_strong, llm_base, manual, includ
             sys_message = "As an AI specializing in summarizing ArXiv paper sections, your main task is to distill complex " \
                           "scientific concepts from a given section of a paper into 2-3 simple, yet substantial, " \
                           "sentences. Retain key information, deliver the core idea, and ensure the summary is easy " \
-                          "to understand, while not losing the main essence of the content. The text must be written in " \
-                          "the first person plural point of view."
+                          "to understand, while not losing the main essence of the content. "
 
-            human_message = 'Below is the ' \
-                            'section that needs to be summarized in at most 2-3 sentences and it is indicated by ' \
-                            f'double angle brackets <<{curr_upto_upto4k}>>.'
+            human_message = 'Below is the section that needs to be summarized in at most 2-3 sentences and it is ' \
+                            f'indicated by double angle brackets <<{curr_upto_upto4k}>>. Start with "In this ' \
+                            'section, we" and continue in first person plural point of view.'
 
             messages = [
                 {'role': 'system', 'content': sys_message},
@@ -310,7 +318,7 @@ def gpt_textvideo_verbalizer(text, llm_api, llm_strong, llm_base, manual, includ
             else:
                 raise Exception(f"{llm_base} failed")
 
-            summary = summary.replace("$", '')
+            summary = summary.replace("$", '').replace("```", '').replace("<<", '').replace(">>", '').replace("**", '')
 
             smry = ' Section Summary: ' + summary + ' '
 
