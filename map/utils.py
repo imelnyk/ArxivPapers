@@ -11,7 +11,7 @@ import spacy
 from thefuzz import fuzz
 from difflib import SequenceMatcher
 from sklearn.metrics.pairwise import cosine_similarity
-
+from sentence_transformers import SentenceTransformer
 
 class Matcher:
     def __init__(self, cache_dir):
@@ -20,6 +20,7 @@ class Matcher:
         self.model = BertModel.from_pretrained('bert-base-uncased', cache_dir=cache_dir)
         self.tfidf_vectorizer = TfidfVectorizer()
         self.spacy = spacy.load("en_core_web_lg")
+        self.sent_emb = SentenceTransformer('all-MiniLM-L6-v2', cache_folder=cache_dir)
 
     def bert_matcher(self, sentences1, sentences2):
         # Tokenize input sentence and convert to tensor
@@ -45,6 +46,26 @@ class Matcher:
         seq = torch.argmax(cos_sim_matrix, dim=1).tolist()
 
         return seq
+
+    def miniLM_matcher(self, sentences1, sentences2):
+        # Tokenize input sentence and convert to tensor
+
+        embeddings1 = torch.tensor(self.sent_emb.encode(sentences1))
+        embeddings2 = torch.tensor(self.sent_emb.encode(sentences2))
+
+        # import pdb; pdb.set_trace()
+
+        # Normalize each embedding to have norm=1 to simplify cosine similarity computation
+        normed_emb1 = embeddings1 / embeddings1.norm(dim=1, keepdim=True)
+        normed_emb2 = embeddings2 / embeddings2.norm(dim=1, keepdim=True)
+
+        # Compute cosine similarities
+        cos_sim_matrix = torch.mm(normed_emb1, normed_emb2.transpose(0, 1))
+
+        seq = torch.argmax(cos_sim_matrix, dim=1).tolist()
+
+        return seq
+
 
     def fuzz_matcher(self, sentences1, sentences2):
         seq = []
@@ -100,8 +121,11 @@ class Matcher:
         return seq
 
 
-    def match(self, sentences1, sentences2, bert=None, fuzz=None, spacy=None, diff=None, tfidf=None, pnt=False):
+    def match(self, sentences1, sentences2, minilm=None, bert=None, fuzz=None, spacy=None, diff=None, tfidf=None, pnt=False):
         allseq = []
+
+        if minilm:
+            allseq.append(self.miniLM_matcher(sentences1, sentences2))
 
         if bert:
             allseq.append(self.bert_matcher(sentences1, sentences2))
@@ -179,7 +203,7 @@ def map_text_to_pdfpages(text, pdffile, matcher):
     # splits = re.split('[.]', text)
     splits = sent_tokenize(text)
 
-    seq = matcher.match(splits, pdf_pages_text, fuzz=True, diff=True, tfidf=True)
+    seq = matcher.match(splits, pdf_pages_text, bert=True, minilm=True, fuzz=True, diff=True, tfidf=True)
 
     # first is always first page
     seq[0] = 0
@@ -217,7 +241,7 @@ def map_page_to_blocks(pagemap, text, gs, files_dir, pdffile, matcher, display):
         end = np.where(np.array(pagemap) == pg_num)[0][-1] + 1
         page_text_splits = splits[start:end]
 
-        seq = matcher.match(page_text_splits, good_blocks, bert=True, fuzz=True, spacy=True, diff=True, tfidf=True, pnt=True)
+        seq = matcher.match(page_text_splits, good_blocks, bert=True, minilm=True, fuzz=True, spacy=True, diff=True, tfidf=True, pnt=True)
 
         smoothed_seq = smooth_sequence(seq)
 

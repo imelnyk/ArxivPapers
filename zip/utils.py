@@ -37,7 +37,7 @@ def crop_pdf(input_pdf_path, output_pdf_path, gs, upper_top, top_percent, left_p
     os.system(f'{gs} -sDEVICE=png16m -r500 -o {output_pdf_path}.png {output_pdf_path}')
 
 
-def zip_files(files_dir, gs, ffmpeg, create_short, create_video, final_audio_file, chunk_mp3_file_list, display):
+def zip_files(files_dir, gs, ffmpeg, create_short, create_qa, create_video, final_audio_file, chunk_mp3_file_list, display):
 
     files_to_zip = []
     if create_short:
@@ -81,6 +81,31 @@ def zip_files(files_dir, gs, ffmpeg, create_short, create_video, final_audio_fil
             os.system(f'{ffmpeg} -loop 1 -i {os.path.join(files_dir, str(page_num))}.png '
                       f'-i {os.path.join(files_dir, audio)}.mp3 -vf {resolution} -c:v libx264 -tune stillimage '
                       f'-y -c:a aac -b:a 128k -pix_fmt yuv420p -shortest {os.path.join(files_dir, video)}.mp4 {display}')
+
+    if create_qa:
+        files_to_zip.extend([f'{final_audio_file}_qa.mp3', f'qa_{chunk_mp3_file_list}', 'qa_pages.pkl'])
+
+        if os.path.exists(os.path.join(files_dir, 'questions')):
+
+            abs_paths = glob(os.path.join(files_dir, 'questions', 'question*.pdf'))
+            relative_paths = [os.path.relpath(p, files_dir) for p in abs_paths]
+            files_to_zip.extend(relative_paths)
+
+            with open(os.path.join(files_dir, f'qa_{chunk_mp3_file_list}'), "r") as f:
+                lines = f.readlines()
+
+            # Process each line
+            for line in lines:
+                # Remove the newline character at the end of the line
+                line = line.strip()
+
+                # Split the line into components
+                components = line.split()
+
+                # The filename is the second component
+                audio = components[1]
+
+                files_to_zip.append(audio)
 
     if create_video:
         with open(f"{os.path.join(files_dir, chunk_mp3_file_list)}", "r") as f:

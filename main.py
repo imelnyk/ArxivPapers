@@ -137,6 +137,25 @@ def main(args):
 
         tmpdata = {'gpttext_short': gpttext_short, 'gptslides_short': slides_short['slides']}
 
+    if args.create_qa:
+        questions, answers, qa_pages = gpt_qa_verbalizer(files_dir, llm_api, args.llm_base, matcher, logging)
+
+        create_questions(questions, os.path.join(files_dir, 'questions'))
+
+        with open(os.path.join(files_dir, 'qa_pages.pkl'), 'wb') as f:
+            pickle.dump(qa_pages, f)
+
+        with open(os.path.join(files_dir, 'gpt_questions_answers.txt'), 'w') as f:
+            for q, a in zip(questions, answers):
+                f.write(f'==== Question ====\n\n')
+                f.write(q)
+                f.write("\n\n")
+                f.write(f'==== Answer ====\n\n')
+                f.write(a)
+                f.write("\n\n")
+
+        tmpdata = {'gpttext_q': questions, 'gpttext_a': answers, 'qa_pages': qa_pages}
+
     if args.create_video:
         (gpttext, gptpagemap,
          verbalizer_steps, textpagemap) = gpt_textvideo_verbalizer(text,
@@ -205,6 +224,23 @@ def main(args):
 
         create_slides(slides_short, os.path.join(files_dir, 'slides'))
 
+    if args.create_qa:
+        with open(os.path.join(files_dir, args.chunk_mp3_file_list), 'w') as mp3_list_file:
+            text_to_speech_qa(questions, answers, mp3_list_file, files_dir, tts_client, args.ffmpeg, logging)
+
+        shutil.copy(os.path.join(files_dir, args.chunk_mp3_file_list),
+                    os.path.join(files_dir, f'qa_{args.chunk_mp3_file_list}'))
+
+        final_audio_qa = os.path.join(files_dir, f'{args.final_audio_file}_qa.mp3')
+        os.system(f'{args.ffmpeg} -f concat -i {os.path.join(files_dir, args.chunk_mp3_file_list)} '
+                  f'-c copy {final_audio_qa} {display}')
+
+        logging.info(f'Created QA audio file')
+
+        if args.gdrive_id:
+            gdrive_client.upload_audio(f'[QA] {title}', f'{final_audio_qa}')
+            logging.info(f'Uploaded QA audio to GDrive')
+
     if args.create_video:
         with open(os.path.join(files_dir, args.chunk_mp3_file_list), 'w') as mp3_list_file:
             text_to_speechvideo(gpttext, mp3_list_file, files_dir, tts_client, gptpagemap, args.voice, logging)
@@ -264,10 +300,11 @@ if __name__ == "__main__":
     parser.add_argument("--extract_text_only", action="store_true", help="extract only the text from paper and exit")
     parser.add_argument("--create_video", action="store_true", help="create long video")
     parser.add_argument("--create_short", action="store_true", help="create short video")
+    parser.add_argument("--create_qa", action="store_true", help="create qa video")
     parser.add_argument("--create_audio_simple", action="store_true", help="create audio")
     parser.add_argument("--openai_key", type=str, default="", help='openai key to call GPT API')
     parser.add_argument("--llm_strong", type=str, default="gpt-4-0125-preview", help='llm model for complex tasks')
-    parser.add_argument("--llm_base", type=str, default="gpt-3.5-turbo-1106", help='llm model for basic tasks')
+    parser.add_argument("--llm_base", type=str, default="gpt-3.5-turbo-0125", help='llm model for basic tasks')
 
     args = parser.parse_args()
 

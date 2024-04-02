@@ -37,6 +37,7 @@ def main(args):
 
     # Process each line
     for line in lines:
+
         # Remove the newline character at the end of the line
         line = line.strip()
 
@@ -151,51 +152,111 @@ def main(args):
 
     # =============== SHORT VIDEO ====================
 
-    with open(os.path.join(dr, "shorts_mp3_list.txt"), "r") as f:
-        lines = f.readlines()
+    if os.path.exists(os.path.join(dr, "shorts_mp3_list.txt")):
 
-    # create list of chunks
-    outvideo = open(os.path.join(dr, 'short_mp4_list.txt'), 'w')
+        with open(os.path.join(dr, "shorts_mp3_list.txt"), "r") as f:
+            lines = f.readlines()
 
-    # Process each line
-    for page_num, line in enumerate(lines):
-        # Remove the newline character at the end of the line
-        line = line.strip()
+        # create list of chunks
+        outvideo = open(os.path.join(dr, 'short_mp4_list.txt'), 'w')
 
-        # Split the line into components
-        components = line.split()
+        # Process each line
+        for page_num, line in enumerate(lines):
+            # Remove the newline character at the end of the line
+            line = line.strip()
 
-        # The filename is the second component
-        audio = components[1].replace('.mp3', '')
-        video = audio.replace('-', '')
+            # Split the line into components
+            components = line.split()
 
-        # convert to PNG
-        if page_num == 0:
-            input_path = os.path.join(dr, str(page_num))
-        else:
-            input_path = os.path.join(dr, 'slides', f'slide_{page_num}')
+            # The filename is the second component
+            audio = components[1].replace('.mp3', '')
+            video = audio.replace('-', '')
 
-        os.system(f'{args.gs} -sDEVICE=png16m -r500 -o {os.path.join(dr, str(page_num))}.png {input_path}.pdf')
+            # convert to PNG
+            if page_num == 0:
+                input_path = os.path.join(dr, str(page_num))
+            else:
+                input_path = os.path.join(dr, 'slides', f'slide_{page_num}')
 
-        resolution = "scale=1920:-2"
-        os.system(f'{args.ffmpeg} -loop 1 -i {os.path.join(dr, str(page_num))}.png -i {os.path.join(dr, audio)}.mp3 '
-                  f'-vf {resolution} -c:v libx264 -tune stillimage -y -c:a aac -b:a 128k -pix_fmt yuv420p '
-                  f'-shortest {os.path.join(dr, video)}.mp4')
+            os.system(f'{args.gs} -sDEVICE=png16m -r500 -o {os.path.join(dr, str(page_num))}.png {input_path}.pdf')
 
-        # ensure that there is no silence at the end of the video, and video len is the same as audio len
-        os.system(f'audio_duration=$({args.ffprobe} -i {os.path.join(dr, audio)}.mp3 -show_entries format=duration '
-                  f'-v quiet -of csv="p=0"); 'f'audio_duration=$((${{audio_duration%.*}} + 1)); 'f'{args.ffmpeg} '
-                  f'-i {os.path.join(dr, video)}.mp4 -t $audio_duration -y -c copy {os.path.join(dr, video)}_final.mp4')
+            resolution = "scale=1920:-2"
+            os.system(f'{args.ffmpeg} -loop 1 -i {os.path.join(dr, str(page_num))}.png -i {os.path.join(dr, audio)}.mp3 '
+                      f'-vf {resolution} -c:v libx264 -tune stillimage -y -c:a aac -b:a 128k -pix_fmt yuv420p '
+                      f'-shortest {os.path.join(dr, video)}.mp4')
 
-        # list of all chunks
-        outvideo.write(f"file '{video}_final.mp4'\n")
+            # ensure that there is no silence at the end of the video, and video len is the same as audio len
+            os.system(f'audio_duration=$({args.ffprobe} -i {os.path.join(dr, audio)}.mp3 -show_entries format=duration '
+                      f'-v quiet -of csv="p=0"); 'f'audio_duration=$((${{audio_duration%.*}} + 1)); 'f'{args.ffmpeg} '
+                      f'-i {os.path.join(dr, video)}.mp4 -t $audio_duration -y -c copy {os.path.join(dr, video)}_final.mp4')
 
-    outvideo.close()
+            # list of all chunks
+            outvideo.write(f"file '{video}_final.mp4'\n")
 
-    # joint video
-    os.system(f'{args.ffmpeg} -f concat -i {os.path.join(dr, "short_mp4_list.txt")} '
-              f'-y -c copy {os.path.join(dr, "output_short.mp4")}')
+        outvideo.close()
 
+        # joint video
+        os.system(f'{args.ffmpeg} -f concat -i {os.path.join(dr, "short_mp4_list.txt")} '
+                  f'-y -c copy {os.path.join(dr, "output_short.mp4")}')
+
+    # =============== QA VIDEO ====================
+
+    if os.path.exists(os.path.join(dr, "qa_mp3_list.txt")):
+
+        with open(os.path.join(dr, "qa_mp3_list.txt"), "r") as f:
+            lines = f.readlines()
+
+        # create list of chunks
+        outvideo = open(os.path.join(dr, 'qa_mp4_list.txt'), 'w')
+
+        qa_pages = pickle.load(open(os.path.join(dr, 'qa_pages.pkl'), 'rb'))
+
+        # Process each line
+        turn = -1
+        for line_num, line in enumerate(lines):
+            # Remove the newline character at the end of the line
+            line = line.strip()
+
+            # Split the line into components
+            components = line.split()
+
+            # The filename is the second component
+            audio = components[1].replace('.mp3', '')
+            video = audio.replace('-', '')
+
+            # convert to PNG
+            if 'question' in audio:  # question - get created slide
+                turn += 1
+                page_num = 0
+                input_path = os.path.join(dr, 'questions', f'question_{turn}')
+            else:  # answer - get single page from paper
+                p_num = qa_pages[turn][page_num]
+                # extract the page from PDF
+                os.system(f'{args.gs} -sDEVICE=pdfwrite -dNOPAUSE -dBATCH -dFirstPage={p_num+1} -dLastPage={p_num+1} -sOutputFile={os.path.join(dr, str(p_num))}.pdf {os.path.join(dr, "main.pdf")} > /dev/null 2>&1')
+                input_path = os.path.join(dr, f'{p_num}')
+                page_num += 1
+
+            qa_page = 'qa_page.png'
+            os.system(f'{args.gs} -sDEVICE=png16m -r500 -o {os.path.join(dr, qa_page)} {input_path}.pdf')
+
+            resolution = "scale=1920:-2"
+            os.system(f'{args.ffmpeg} -loop 1 -i {os.path.join(dr, qa_page)} -i {os.path.join(dr, audio)}.mp3 '
+                      f'-vf {resolution} -c:v libx264 -tune stillimage -y -c:a aac -b:a 128k -pix_fmt yuv420p '
+                      f'-shortest {os.path.join(dr, video)}.mp4')
+
+            # ensure that there is no silence at the end of the video, and video len is the same as audio len
+            os.system(f'audio_duration=$({args.ffprobe} -i {os.path.join(dr, audio)}.mp3 -show_entries format=duration '
+                      f'-v quiet -of csv="p=0"); 'f'audio_duration=$((${{audio_duration%.*}} + 1)); 'f'{args.ffmpeg} '
+                      f'-i {os.path.join(dr, video)}.mp4 -t $audio_duration -y -c copy {os.path.join(dr, video)}_final.mp4')
+
+            # list of all chunks
+            outvideo.write(f"file '{video}_final.mp4'\n")
+
+        outvideo.close()
+
+        # joint video
+        os.system(f'{args.ffmpeg} -f concat -i {os.path.join(dr, "qa_mp4_list.txt")} '
+                  f'-y -c copy {os.path.join(dr, "output_qa.mp4")}')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Arguments')

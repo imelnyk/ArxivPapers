@@ -2,8 +2,45 @@ from nltk.tokenize import sent_tokenize
 from google.cloud import texttospeech
 import os
 import textwrap
-import subprocess
-from glob import glob
+import shutil
+
+
+def text_to_speech_qa(questions, answers, mp3_list_file, files_dir, tts_client, ffmpeg, logging):
+
+    for q, a in zip(questions, answers):
+        response = synthesize_speech(q, tts_client, 'Studio-O', 1.0)
+
+        logging.info(f'Processed question: \n\n {q}')
+
+        chunk_audio_file_name = f'question_{hash(q)}.mp3'
+        chunk_audio = os.path.join(files_dir, f'{chunk_audio_file_name}')
+
+        with open(chunk_audio, "wb") as out:
+            out.write(response.audio_content)
+
+        mp3_list_file.write(f'file {chunk_audio_file_name}\n')
+
+        # append 2 seconds
+        chunk_audio_with_silence = os.path.join(files_dir, f'q_with_silence_{hash(q)}.mp3')
+        os.system(f'{ffmpeg} -i {chunk_audio} -f lavfi -t 2 -i anullsrc=r=44100:cl=stereo -filter_complex "[0:a][1:a]concat=n=2:v=0:a=1" {chunk_audio_with_silence}')
+        shutil.move(chunk_audio_with_silence, chunk_audio)
+
+        a_sent = a.split('.')[:-1]
+
+        for a_s in a_sent:
+            response = synthesize_speech(a_s, tts_client, 'Studio-Q', 1.0)
+
+            chunk_audio_file_name = f'answer_{hash(a_s)}.mp3'
+            chunk_audio = os.path.join(files_dir, f'{chunk_audio_file_name}')
+
+            with open(chunk_audio, "wb") as out:
+                out.write(response.audio_content)
+
+            mp3_list_file.write(f'file {chunk_audio_file_name}\n')
+
+        logging.info(f'Processed answer: \n\n {a}')
+        logging.info("-" * 100)
+
 
 def text_to_speech_short(text, slides, mp3_list_file, files_dir, tts_client, logging):
     para = text.split('\n\n')
@@ -127,76 +164,3 @@ def text_to_speech(text, mp3_list_file, files_dir, tts_client, voice, logging):
 
         mp3_list_file.write(f'file {chunk_audio_file_name}\n')
         block = []
-
-
-def create_slides(slides, dir_path):
-    def generate_beamer_slide(title, bullet_points):
-        """
-        Generate a LaTeX Beamer slide with given title and bullet points.
-
-        :param title: Title of the slide
-        :param bullet_points: List of bullet points. If a bullet point is a tuple,
-                              the first element is the main point, and the second is a list of sub-points.
-        :return: LaTeX code as a string.
-        """
-        slide = "\\begin{frame}\n"
-        slide += "  \\frametitle{%s}\n" % title
-        slide += "  \\begin{itemize}\n"
-
-        for point in bullet_points:
-            if isinstance(point, tuple):  # main point with sub-points
-                slide += "    \\item %s\n" % point[0]
-                slide += "    \\begin{itemize}\n"
-                for sub_point in point[1]:
-                    slide += "      \\item %s\n" % sub_point
-                slide += "    \\end{itemize}\n"
-            else:  # just a main point
-                slide += "    \\item %s\n" % point
-
-        slide += "  \\end{itemize}\n"
-        slide += "\\end{frame}\n"
-
-        return slide
-
-    def compile_latex_to_pdf(latex_code, directory, filename="presentation"):
-        # Complete the LaTeX code with preamble and custom dimensions
-        full_code = f"""
-        \\documentclass[20pt]{{beamer}}
-        \\geometry{{papersize={{8.5in,11in}}}}
-        \\begin{{document}}
-        {latex_code}
-        \\end{{document}}
-        """
-
-        latex_filename = f"{filename}.tex"
-
-        # Save the LaTeX code to a .tex file
-        with open(os.path.join(directory, latex_filename), 'w') as f:
-            f.write(full_code)
-
-        # Compile using pdflatex
-        subprocess.run(["pdflatex",  "-interaction=nonstopmode", f"{filename}.tex"], cwd=directory)
-
-        print(f"{filename}.pdf generated!")
-
-    os.makedirs(dir_path, exist_ok=True)
-
-    for i, slide in enumerate(slides['slides']):
-        title = slide[0]
-        points = slide[1:]
-
-        slide_code = generate_beamer_slide(title, points)
-        compile_latex_to_pdf(slide_code, directory=dir_path, filename=f"slide_{i+1}")
-
-    # List all files in the directory
-    all_files = [f for f in os.listdir(dir_path) if os.path.isfile(os.path.join(dir_path, f))]
-
-    # List all .pdf files in the directory
-    pdf_files = [os.path.basename(f) for f in glob(os.path.join(dir_path, "*.pdf"))]
-
-    # Subtract the list of pdf_files from all_files to get files to delete
-    files_to_delete = set(all_files) - set(pdf_files)
-
-    # Iterate over the files to delete and remove them
-    for file in files_to_delete:
-        os.remove(os.path.join(dir_path, file))
